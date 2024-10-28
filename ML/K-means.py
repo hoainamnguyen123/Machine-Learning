@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 # Đọc dữ liệu
 df = pd.read_csv('train.csv')
 
@@ -110,6 +110,39 @@ for feature, description in features_info.items():
     
     row += 1
 
+
+def analyze_price_segments(df, kmeans):
+    # Thêm cột cluster vào dataframe
+    df_with_clusters = df.copy()
+    df_with_clusters['cluster'] = kmeans.labels_
+    
+    # Tính giá trị trung bình của các features quan trọng cho mỗi cụm 
+    cluster_means = df_with_clusters.groupby('cluster').mean()
+    
+    # Các features quan trọng ảnh hưởng đến giá
+    price_features = ['ram', 'battery_power', 'int_memory', 'pc', 'px_width', 'px_height']
+    
+    # Tính điểm tổng hợp cho mỗi cụm dựa trên các features quan trọng
+    cluster_scores = {}
+    for cluster in range(kmeans.n_clusters):
+        score = sum(cluster_means.loc[cluster, feature] for feature in price_features)
+        cluster_scores[cluster] = score
+    
+    # Sắp xếp các cụm theo điểm từ thấp đến cao
+    sorted_clusters = sorted(cluster_scores.items(), key=lambda x: x[1])
+    
+    # Gán phân khúc giá cho các cụm
+    price_segments = {}
+    price_ranges = ["Thấp (< 250$)", "Trung bình (250$ - 500$)", 
+                   "Cao (500$ - 750$)", "Rất cao (> 750$)"]
+    
+    for i, (cluster, _) in enumerate(sorted_clusters):
+        price_segments[cluster] = price_ranges[i]
+    
+    return price_segments, cluster_means
+
+price_segments, cluster_characteristics = analyze_price_segments(df, kmeans)
+
 def validate_inputs():
     for feature, entry in entries.items():
         value = entry.get().strip()
@@ -127,36 +160,41 @@ def predict_cluster():
     if not validate_inputs():
         return
     
-    # Lấy giá trị từ các entry
     input_data = []
     for feature in features_info.keys():
         input_data.append(float(entries[feature].get()))
     
-    # Chuẩn hóa dữ liệu đầu vào
     input_scaled = scaler.transform([input_data])
-    
-    # Dự đoán cụm
     cluster = kmeans.predict(input_scaled)[0]
     
     # Phân tích đặc điểm của cụm
-    cluster_center = kmeans.cluster_centers_[cluster]
+    result_text = "";
     
-    # Xác định mức giá dựa trên đặc điểm của cụm
-    price_ranges = {
-        0: "Thấp (< 250$)",
-        1: "Trung bình (250$ - 500$)",
-        2: "Cao (500$ - 750$)",
-        3: "Rất cao (> 750$)"
-    }
+    # Thêm một số đặc điểm nổi bật của cụm
+    result_text += "Đặc điểm nổi bật của cụm:\n"
+    important_features = ['ram', 'battery_power', 'int_memory', 'pc','px_width','px_height']
+    for feature in important_features:
+        value = cluster_characteristics.loc[cluster, feature]
+        result_text += f"- {features_info[feature]}: {value:.2f}\n"
     
-    result_text = f"Điện thoại thuộc cụm {cluster + 1}\n"
-    result_text += f"Phân khúc giá dự đoán: {price_ranges[cluster]}"
+    # Thêm phân khúc giá
+    result_text += f"\nPhân khúc giá dự đoán: {price_segments[cluster]}"
+    
     messagebox.showinfo("Kết quả phân cụm", result_text)
+
+
 
 def clear_entries():
     for entry in entries.values():
         entry.delete(0, END)
 
+
+# Tính độ đo Silhouette và Davies-Bouldin
+silhouette_avg = silhouette_score(X_scaled, kmeans.labels_)
+davies_bouldin_avg = davies_bouldin_score(X_scaled, kmeans.labels_)
+
+print(f"Độ đo Silhouette: {silhouette_avg:.9f}")
+print(f"Độ đo Davies-Bouldin: {davies_bouldin_avg:.9f}")
 # Tạo frame cho các nút
 button_frame = Frame(second_frame)
 button_frame.grid(row=row, column=0, pady=10)
@@ -172,40 +210,3 @@ clear_button.pack(side=LEFT, padx=5)
 root.geometry("500x600")
 
 root.mainloop()
-
-# class CustomKMeans:
-#     def __init__(self, n_clusters, max_iters=100):
-#         self.n_clusters = n_clusters
-#         self.max_iters = max_iters
-#         self.centroids = None
-        
-#     def fit(self, X):
-#         # Khởi tạo centroids ngẫu nhiên
-#         random_indices = np.random.permutation(X.shape[0])[:self.n_clusters]
-#         self.centroids = X[random_indices]
-        
-#         for _ in range(self.max_iters):
-#             # Gán điểm vào các cụm
-#             clusters = self._assign_clusters(X)
-            
-#             # Lưu centroids cũ để kiểm tra hội tụ
-#             old_centroids = self.centroids.copy()
-            
-#             # Cập nhật centroids
-#             for i in range(self.n_clusters):
-#                 points_in_cluster = X[clusters == i]
-#                 if len(points_in_cluster) > 0:
-#                     self.centroids[i] = points_in_cluster.mean(axis=0)
-            
-#             # Kiểm tra hội tụ
-#             if np.all(old_centroids == self.centroids):
-#                 break
-                
-#     def _assign_clusters(self, X):
-#         # Tính khoảng cách từ mỗi điểm đến các centroids
-#         distances = np.sqrt(((X - self.centroids[:, np.newaxis])**2).sum(axis=2))
-#         # Gán điểm vào cụm gần nhất
-#         return np.argmin(distances, axis=0)
-    
-#     def predict(self, X):
-#         return self._assign_clusters(X)
